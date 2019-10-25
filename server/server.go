@@ -35,23 +35,25 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	recvBuf := make([]byte, 4096)
 	go func() {
-		n, err := tcp.Read(recvBuf)
-		if err != nil {
-			log.Println("read from tcp failed:", err)
-			c.Close()
+		for {
+			n, err := tcp.Read(recvBuf)
+			if err != nil {
+				log.Println("read from tcp failed:", err)
+				c.Close()
 
-			return
+				return
+			}
+
+			if n == 0 {
+				log.Println("read from tcp got 0 bytes")
+				c.Close()
+
+				return
+			}
+
+			//log.Println("tcp recv message, len:", n)
+			tcp.Write(recvBuf[:n])
 		}
-
-		if n == 0 {
-			log.Println("read from tcp got 0 bytes")
-			c.Close()
-
-			return
-		}
-
-		log.Println("tcp recv message, len:", n)
-		tcp.Write(recvBuf[:n])
 	}()
 
 	for {
@@ -63,7 +65,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		log.Println("websocket recv message, len:", len(message))
+		// log.Println("websocket recv message, len:", len(message))
 		err = writeAll(message, tcp)
 		if err != nil {
 			log.Println("write all to tcp failed:", err)
