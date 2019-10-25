@@ -52,7 +52,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 
 			//log.Println("tcp recv message, len:", n)
-			tcp.Write(recvBuf[:n])
+			c.WriteMessage(websocket.BinaryMessage, recvBuf[:n])
 		}
 	}()
 
