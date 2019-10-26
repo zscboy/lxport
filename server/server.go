@@ -119,7 +119,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			log.Println("tcp recv message, len:", n)
+			//log.Println("tcp recv message, len:", n)
 			err = wsh.write(recvBuf[:n])
 			if err != nil {
 				log.Println("write all to websocket failed:", err)
@@ -138,7 +138,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		log.Println("websocket recv message, len:", len(message))
+		//log.Println("websocket recv message, len:", len(message))
 		err = writeAll(message, tcp)
 		if err != nil {
 			log.Println("write all to tcp failed:", err)
