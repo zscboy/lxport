@@ -57,7 +57,7 @@ func (wsh *wsholder) writePong(msg []byte) {
 }
 
 func (wsh *wsholder) onPong(msg []byte) {
-	log.Println("wsh on pong")
+	// log.Println("wsh on pong")
 	wsh.waitping = 0
 }
 
