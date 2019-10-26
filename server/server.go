@@ -2,6 +2,10 @@ package server
 
 import (
 	"net"
+	"sync"
+	"time"
+
+	"encoding/binary"
 
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
@@ -9,7 +13,53 @@ import (
 	"net/http"
 )
 
-var upgrader = websocket.Upgrader{} // use default options
+var (
+	upgrader = websocket.Upgrader{} // use default options
+	wsIndex  = 0
+	wsmap    = make(map[int]*wsholder)
+)
+
+type wsholder struct {
+	id        int
+	conn      *websocket.Conn
+	writeLock sync.Mutex
+	waitping  int
+}
+
+func (wsh *wsholder) write(msg []byte) error {
+	wsh.writeLock.Lock()
+	err := wsh.conn.WriteMessage(websocket.BinaryMessage, msg)
+	wsh.writeLock.Unlock()
+
+	return err
+}
+
+func (wsh *wsholder) keepalive() {
+	if wsh.waitping > 3 {
+		wsh.conn.Close()
+		return
+	}
+
+	wsh.writeLock.Lock()
+	now := time.Now().Unix()
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, uint64(now))
+	wsh.conn.WriteMessage(websocket.PingMessage, b)
+	wsh.writeLock.Unlock()
+
+	wsh.waitping++
+}
+
+func (wsh *wsholder) writePong(msg []byte) {
+	wsh.writeLock.Lock()
+	wsh.conn.WriteMessage(websocket.PongMessage, msg)
+	wsh.writeLock.Unlock()
+}
+
+func (wsh *wsholder) onPong(msg []byte) {
+	log.Println("wsh on pong")
+	wsh.waitping = 0
+}
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	c, err := upgrader.Upgrade(w, r, nil)
@@ -31,7 +81,25 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	wsIndex++
+	wsh := &wsholder{
+		conn: c,
+		id:   wsIndex,
+	}
+	wsmap[wsh.id] = wsh
+
 	defer tcp.Close()
+	defer delete(wsmap, wsh.id)
+
+	c.SetPingHandler(func(data string) error {
+		wsh.writePong([]byte(data))
+		return nil
+	})
+
+	c.SetPongHandler(func(data string) error {
+		wsh.onPong([]byte(data))
+		return nil
+	})
 
 	recvBuf := make([]byte, 4096)
 	go func() {
@@ -51,8 +119,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			//log.Println("tcp recv message, len:", n)
-			c.WriteMessage(websocket.BinaryMessage, recvBuf[:n])
+			log.Println("tcp recv message, len:", n)
+			err = wsh.write(recvBuf[:n])
+			if err != nil {
+				log.Println("write all to websocket failed:", err)
+				tcp.Close()
+				return
+			}
 		}
 	}()
 
@@ -65,10 +138,12 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		// log.Println("websocket recv message, len:", len(message))
+		log.Println("websocket recv message, len:", len(message))
 		err = writeAll(message, tcp)
 		if err != nil {
 			log.Println("write all to tcp failed:", err)
+			c.Close()
+
 			break
 		}
 	}
@@ -92,8 +167,19 @@ func writeAll(buf []byte, nc net.Conn) error {
 	return nil
 }
 
+func keepalive() {
+	for {
+		time.Sleep(time.Second * 30)
+
+		for _, v := range wsmap {
+			v.keepalive()
+		}
+	}
+}
+
 // CreateHTTPServer start http server
 func CreateHTTPServer(listenAddr string, wsPath string) {
+	go keepalive()
 	http.HandleFunc(wsPath, wsHandler)
 	log.Printf("server listen at:%s, path:%s", listenAddr, wsPath)
 	log.Fatal(http.ListenAndServe(listenAddr, nil))
