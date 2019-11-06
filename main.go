@@ -14,13 +14,17 @@ import (
 
 var (
 	listenAddr = ""
-	wsPath     = ""
+	xportPath  = ""
+	webSSHPath = ""
+	webDir     = ""
 	daemon     = ""
 )
 
 func init() {
 	flag.StringVar(&listenAddr, "l", "127.0.0.1:8010", "specify the listen address")
-	flag.StringVar(&wsPath, "p", "/xportabc", "specify websocket path")
+	flag.StringVar(&xportPath, "p", "/xport", "specify websocket path")
+	flag.StringVar(&webSSHPath, "wp", "/webssh/", "specify web ssh path")
+	flag.StringVar(&webDir, "wd", "", "specify web dir")
 	flag.StringVar(&daemon, "d", "yes", "specify daemon mode")
 }
 
@@ -44,8 +48,12 @@ func main() {
 
 	log.Println("try to start  lxport server, version:", getVersion())
 
+	if webDir == "" {
+		log.Println("webDir not provided, will not support webssh")
+	}
+
 	// start http server
-	go server.CreateHTTPServer(listenAddr, wsPath)
+	go server.CreateHTTPServer(listenAddr, xportPath, webSSHPath, webDir)
 	log.Println("start lxport server ok!")
 
 	if daemon == "yes" {

@@ -2,6 +2,7 @@ package server
 
 import (
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,10 +15,17 @@ import (
 )
 
 var (
-	upgrader = websocket.Upgrader{} // use default options
-	wsIndex  = 0
-	wsmap    = make(map[int]*wsholder)
+	upgrader = websocket.Upgrader{
+		CheckOrigin: checkOrigin,
+	} // use default options
+
+	wsIndex = 0
+	wsmap   = make(map[int]*wsholder)
 )
+
+func checkOrigin(_ *http.Request) bool {
+	return true
+}
 
 type wsholder struct {
 	id        int
@@ -61,7 +69,7 @@ func (wsh *wsholder) onPong(msg []byte) {
 	wsh.waitping = 0
 }
 
-func wsHandler(w http.ResponseWriter, r *http.Request) {
+func xportWSHandler(w http.ResponseWriter, r *http.Request) {
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Print("upgrade:", err)
@@ -178,9 +186,24 @@ func keepalive() {
 }
 
 // CreateHTTPServer start http server
-func CreateHTTPServer(listenAddr string, wsPath string) {
+func CreateHTTPServer(listenAddr string, xportPath string, webPath string, webdir string) {
 	go keepalive()
-	http.HandleFunc(wsPath, wsHandler)
-	log.Printf("server listen at:%s, path:%s", listenAddr, wsPath)
+	http.HandleFunc(xportPath, xportWSHandler)
+
+	if webdir != "" && webPath != "" {
+		directory := webdir // "/home/abc/webpack-starter/build"
+		http.Handle("/", http.StripPrefix(strings.TrimRight(webPath, "/"),
+			http.FileServer(http.Dir(directory))))
+
+		websocketPath := strings.TrimRight(webPath, "/") + "/ws"
+		http.HandleFunc(websocketPath, webSSHHandler)
+
+		log.Printf("start with webssh support, websoket:%s, web path:%s, web dir:%s",
+			websocketPath, webPath, webdir)
+	} else {
+		log.Warn("start without webssh support")
+	}
+
+	log.Printf("server listen at:%s, xportPath:%s", listenAddr, xportPath)
 	log.Fatal(http.ListenAndServe(listenAddr, nil))
 }
